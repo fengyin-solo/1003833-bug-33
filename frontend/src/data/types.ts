@@ -5,7 +5,9 @@ export type EntryRow = {
   status: string
   pending: boolean
   abnormal: boolean
-  [field: string]: string | number | boolean
+  // 乐观锁版本：每次落库自增；并发动作只有版本号与读取时一致的一方能提交成功。
+  version?: number
+  [field: string]: string | number | boolean | undefined
 }
 
 export type ModuleMeta = {
@@ -35,4 +37,14 @@ export type ActionResult = {
 export type OverviewResult = {
   cards: { label: string; value: number }[]
   modules: { name: string; created: number; pending: number; abnormal: number }[]
+}
+
+export type PotteryMatchRow = {
+  id: number
+  标本编号: string
+  出土单位: string
+  器形类别: string
+  尺寸测量: string
+  status: string
+  version: number
 }

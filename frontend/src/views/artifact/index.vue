@@ -58,10 +58,39 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 2" class="empty-state">暂无出土遗物数据，可先登记出土遗物</td>
+          <td :colspan="columns.length + 2" class="empty-state">{{ rowsEmptyReason }}</td>
         </tr>
       </tbody>
     </table>
+
+    <section class="ledger" data-testid="pottery-match-ledger">
+      <header class="ledger-head">
+        <div>
+          <h3>出土遗物拼对清单</h3>
+          <p class="page-desc">跨页面取自「陶器整理」中已拼对/已归档标本，尺寸测量按原精度同源展示，口径与陶器整理页保持一致。</p>
+        </div>
+        <button class="btn ghost" type="button" @click="reloadMatches">刷新拼对清单</button>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th v-for="column in matchColumns" :key="column.key">{{ column.head }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in matchRows" :key="String(row.id)">
+            <td v-for="column in matchColumns" :key="column.key">{{ row[column.key] }}</td>
+          </tr>
+          <tr v-if="!matchRows.length">
+            <td :colspan="matchColumns.length" class="empty-state">{{ matchEmptyReason }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <footer class="page-foot">
+        <span>共 {{ matchRows.length }} 条拼对记录（数据源：陶器整理）</span>
+        <span v-if="matchError" class="error-text">{{ matchError }}</span>
+      </footer>
+    </section>
 
     <footer class="page-foot">
       <span>共 {{ total }} 条出土遗物记录</span>
@@ -76,10 +105,11 @@ import { computed, onMounted, ref } from 'vue'
 import {
   downloadEntries,
   listEntries,
+  listPotteryMatches,
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
-import type { EntryRow } from '@/data/types'
+import type { EntryRow, PotteryMatchRow } from '@/data/types'
 
 const meta = moduleMeta('artifact')
 const columns = ["器物编号", "出土探方", "出土层位", "器物质地", "器物类型", "完残程度", "登记人", "登记状态"]
@@ -87,17 +117,49 @@ const actions = ["完成清洗", "分配编号", "办理入库"]
 const statuses = ["已采集", "已清洗", "已编号", "已入库", "借出展示"]
 const stats = [{"label": "遗物总数", "value": 0}, {"label": "已入库数", "value": 0}, {"label": "待清洗数", "value": 0}]
 
+// 跨页面拼对清单：列与陶器整理页同源，尺寸测量走同一保真格式化。
+const matchColumns = [
+  { key: '标本编号', head: '标本编号' },
+  { key: '出土单位', head: '出土单位' },
+  { key: '器形类别', head: '器形类别' },
+  { key: '尺寸测量', head: '尺寸测量（原精度）' },
+  { key: 'status', head: '当前状态' },
+] as const
+
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
+const matchRows = ref<PotteryMatchRow[]>([])
+const matchError = ref('')
+const matchLoadFailed = ref(false)
+
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+const hasActiveFilter = computed(() =>
+  Object.values(filters.value).some((value) => value.trim() !== ''),
+)
+
+const rowsEmptyReason = computed(() => {
+  if (hasActiveFilter.value) {
+    return '当前筛选条件没有命中任何出土遗物，请放宽或重置检索条件'
+  }
+  return '暂无出土遗物数据：本模块尚未登记遗物，可先登记出土遗物'
+})
+
+const matchEmptyReason = computed(() => {
+  if (matchLoadFailed.value) {
+    return '拼对清单读取异常：无法获取陶器整理数据，请检查本地数据后刷新重试'
+  }
+  return '拼对清单为空：陶器整理页还没有「已拼对」或「已归档」的标本；标本完成登记拼对后会自动出现在这里'
+})
 
 function resetFilters() {
   filters.value = {}
@@ -133,5 +195,20 @@ function reload() {
   }
 }
 
-onMounted(reload)
+function reloadMatches() {
+  matchError.value = ''
+  matchLoadFailed.value = false
+  try {
+    matchRows.value = listPotteryMatches()
+  } catch (error) {
+    matchLoadFailed.value = true
+    matchRows.value = []
+    matchError.value = error instanceof Error ? error.message : '拼对清单读取失败'
+  }
+}
+
+onMounted(() => {
+  reload()
+  reloadMatches()
+})
 </script>
